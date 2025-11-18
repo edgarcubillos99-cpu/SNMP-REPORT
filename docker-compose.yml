@@ -1,0 +1,12 @@
+version: '3.8'
+
+services:
+  snmp-alert:
+    build: .
+    container_name: snmp-alert
+    restart: always
+    env_file:
+      - .env
+    volumes:
+      - ./configs:/app/configs
+      - ./output:/app/output
