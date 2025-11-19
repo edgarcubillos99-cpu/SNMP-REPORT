@@ -1,3 +1,4 @@
+// aqui se definen las funciones para realizar el polling SNMP y evaluar las reglas configuradas
 package snmp
 
 import (
@@ -11,6 +12,7 @@ import (
 
 func StartPolling(cfg *config.Config, reportChan chan<- report.ReportItem, interval int) {
 
+	// Bucle infinito de polling
 	for {
 		fmt.Println("🔎 Ejecutando SNMP GET polling...")
 
@@ -58,6 +60,7 @@ func StartPolling(cfg *config.Config, reportChan chan<- report.ReportItem, inter
 					)
 				}
 
+				// Si hay riesgo, enviar alerta al canal
 				if isRisk {
 					reportChan <- report.ReportItem{
 						IP:    agent.IP,
@@ -69,6 +72,7 @@ func StartPolling(cfg *config.Config, reportChan chan<- report.ReportItem, inter
 			}
 		}
 
+		// Esperar el intervalo antes del siguiente polling
 		time.Sleep(time.Duration(interval) * time.Second)
 	}
 }

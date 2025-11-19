@@ -1,3 +1,4 @@
+// aqui se definen las funciones para enviar correos electrónicos con reportes
 package email
 
 import (

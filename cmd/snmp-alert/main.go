@@ -1,3 +1,4 @@
+// aqui se encuentra el punto de entrada principal de la aplicación SNMP Alert
 package main
 
 import (
@@ -45,7 +46,7 @@ func main() {
 	fmt.Println("🟢 Sistema SNMP iniciado (Polling + Traps)")
 
 	// ========== SCHEDULER AUTOMÁTICO ==========
-	reportInterval := 10 // minutos
+	reportInterval := 10 // segundos
 
 	go func() {
 		for {

@@ -1,3 +1,4 @@
+// aqui se definen las estructuras y funciones para cargar la configuración desde un archivo JSON
 package config
 
 import (

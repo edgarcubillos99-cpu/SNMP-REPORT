@@ -1,3 +1,4 @@
+// aqui se definen las funciones para consultar agentes SNMP
 package snmp
 
 import (
@@ -91,7 +92,7 @@ func Query(agent config.Agent) (map[string]float64, error) {
 			continue
 		}
 
-		// Conversión segura del valor
+		// Conversión segura del valor obtenido
 		if pdu == nil || len(pdu.Variables) == 0 {
 			fmt.Println("Empty PDU en", agent.IP, o.OID)
 			continue

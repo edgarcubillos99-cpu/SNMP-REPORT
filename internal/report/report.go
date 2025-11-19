@@ -1,3 +1,4 @@
+// aqui se definen las estructuras y funciones para generar reportes en formato JSON
 package report
 
 import (

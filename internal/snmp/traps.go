@@ -1,3 +1,4 @@
+// aqui se definen las funciones para manejar traps SNMP
 package snmp
 
 import (
@@ -11,12 +12,15 @@ import (
 
 func StartTrapServer(reportChan chan<- report.ReportItem) {
 
+	// Configurar el listener de traps SNMP
 	trapListener := gosnmp.NewTrapListener()
 	trapListener.Params = gosnmp.Default
 
+	// Función que se ejecuta al recibir un trap
 	trapListener.OnNewTrap = func(packet *gosnmp.SnmpPacket, addr *net.UDPAddr) {
 		fmt.Println("📩 Trap recibido desde:", addr.IP.String())
 
+		// Procesar cada variable en el trap
 		for _, v := range packet.Variables {
 
 			ri := report.ReportItem{

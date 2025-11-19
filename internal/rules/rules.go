@@ -1,3 +1,4 @@
+// aqui se definen las reglas para evaluar riesgos basados en valores numéricos
 package rules
 
 import "strings"
