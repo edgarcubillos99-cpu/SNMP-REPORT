@@ -7,9 +7,11 @@ import (
 
 // Definiciones de estructuras de configuración
 type OIDRule struct {
-	OID   string  `json:"oid"`
-	Rule  string  `json:"rule"`
-	Value float64 `json:"value"`
+	OID      string  `json:"oid"`
+	Rule     string  `json:"rule"`
+	Value    float64 `json:"value"`     // valor simple
+	ValueMin float64 `json:"value_min"` // valores de rango (opcional)
+	ValueMax float64 `json:"value_max"` // valores de rango (opcional)
 }
 
 // Definición de un agente SNMP

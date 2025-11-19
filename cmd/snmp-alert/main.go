@@ -3,20 +3,22 @@ package main
 import (
 	"fmt"
 	"log"
-	"sync"
-
-	"github.com/joho/godotenv"
-
+	"os"
+	"os/signal"
 	"snmp-alert/internal/config"
 	"snmp-alert/internal/email"
 	"snmp-alert/internal/report"
-	"snmp-alert/internal/rules"
 	"snmp-alert/internal/snmp"
+	"sync"
+	"syscall"
+	"time"
+
+	"github.com/joho/godotenv"
 )
 
 func main() {
 
-	// Cargar .env
+	// Cargar variables de entorno
 	godotenv.Load()
 
 	// Cargar configuración de agentes SNMP
@@ -25,52 +27,76 @@ func main() {
 		log.Fatal(err)
 	}
 
-	// Consultar agentes SNMP en paralelo
-	var wg sync.WaitGroup
-	var mu sync.Mutex
+	// Canal desde traps y polling
+	reportChan := make(chan report.ReportItem, 100)
 
-	// Resultado de los reportes
-	var rep []report.ReportItem
+	// Lista protegida por mutex
+	var (
+		reportList []report.ReportItem
+		mu         sync.Mutex
+	)
 
-	// Iterar sobre los agentes
-	for _, agent := range cfg.Agents {
-		wg.Add(1)
+	// Iniciar servidor de traps
+	go snmp.StartTrapServer(reportChan)
 
-		go func(a config.Agent) {
-			defer wg.Done()
+	// Iniciar polling cada 10 segundos
+	go snmp.StartPolling(cfg, reportChan, 10)
 
-			// Consultar agente SNMP
-			values, err := snmp.Query(a)
-			if err != nil {
-				return
+	fmt.Println("🟢 Sistema SNMP iniciado (Polling + Traps)")
+
+	// ========== SCHEDULER AUTOMÁTICO ==========
+	reportInterval := 10 // minutos
+
+	go func() {
+		for {
+			time.Sleep(time.Duration(reportInterval) * time.Second)
+
+			mu.Lock()
+			if len(reportList) == 0 {
+				mu.Unlock()
+				fmt.Println("⏳ No hay alertas nuevas para reportar.")
+				continue
 			}
 
-			// Evaluar reglas para cada OID
-			for _, r := range a.OIDs {
-				v := values[r.OID]
+			// Copiar y limpiar buffer de alertas
+			toSend := make([]report.ReportItem, len(reportList))
+			copy(toSend, reportList)
+			reportList = []report.ReportItem{}
+			mu.Unlock()
 
-				if rules.IsRisk(v, r.Rule, r.Value) {
-					mu.Lock()
-					rep = append(rep, report.ReportItem{
-						IP:    a.IP,
-						OID:   r.OID,
-						Value: fmt.Sprintf("%v", v),
-						Alert: "CRÍTICO",
-					})
-					mu.Unlock()
-				}
+			// Guardar reporte
+			if err := report.Save(toSend, "output/report.json"); err != nil {
+				fmt.Println("❌ Error guardando reporte:", err)
+				continue
 			}
 
-		}(agent)
+			fmt.Println("📤 Enviando reporte automático con", len(toSend), "alertas...")
+
+			// Enviar correo
+			if err := email.SendReport("output/report.json", os.Getenv("ALERT_EMAIL")); err != nil {
+				fmt.Println("❌ Error al enviar correo:", err)
+			} else {
+				fmt.Println("✅ Reporte enviado exitosamente.")
+			}
+		}
+	}()
+
+	// Señal de salida
+	exitChan := make(chan os.Signal, 1)
+	signal.Notify(exitChan, syscall.SIGINT, syscall.SIGTERM)
+
+	for {
+		select {
+
+		case r := <-reportChan:
+			mu.Lock()
+			reportList = append(reportList, r)
+			mu.Unlock()
+			fmt.Println("⚠ Alerta nueva:", r)
+
+		case <-exitChan:
+			fmt.Println("⛔ Deteniendo servicio... SIN enviar reporte final.")
+			return
+		}
 	}
-
-	// Esperar a que terminen todas las consultas
-	wg.Wait()
-
-	report.Save(rep, "output/report.json")
-
-	// Usar correo desde .env
-	email.SendReport("output/report.json", "destino@empresa.com")
-
-	fmt.Println("Reporte enviado!")
 }
