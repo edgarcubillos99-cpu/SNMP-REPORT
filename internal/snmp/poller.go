@@ -3,6 +3,8 @@ package snmp
 
 import (
 	"fmt"
+	"strings"
+	"sync"
 	"time"
 
 	"snmp-alert/internal/config"
@@ -12,67 +14,82 @@ import (
 
 func StartPolling(cfg *config.Config, reportChan chan<- report.ReportItem, interval int) {
 
-	// Bucle infinito de polling
-	for {
-		fmt.Println("🔎 Ejecutando SNMP GET polling...")
+	// definir número de workers
+	const workerCount = 5 // o len(cfg.Agents) si queremos 1 worker por agente
+	jobs := make(chan config.Agent)
 
-		for _, agent := range cfg.Agents {
-			values, err := Query(agent)
-			if err != nil {
-				fmt.Println("Error en polling:", err)
-				continue
-			}
+	var wg sync.WaitGroup
 
-			// Evaluar las reglas de cada OID
-			for _, rule := range agent.OIDs {
-
-				val, ok := values[rule.OID]
-				if !ok {
-					fmt.Println("⚠ No se recibió valor para:", rule.OID)
+	// Workers
+	for i := 0; i < workerCount; i++ {
+		go func(id int) {
+			for agent := range jobs {
+				values, err := Query(agent)
+				if err != nil {
+					fmt.Println("Error en polling (worker", id, "):", err)
+					wg.Done()
 					continue
 				}
 
-				// ==========================
-				// Selección automática:
-				// - Si rule.Rule es between o outside → usa ValueMin + ValueMax
-				// - Si rule.Rule es simple → usa Value
-				// ==========================
+				// evaluar reglas
+				for _, rule := range agent.OIDs {
 
-				var isRisk bool
+					val, ok := values[rule.OID]
+					if !ok {
+						fmt.Println("⚠ No se recibió valor para:", rule.OID, "en", agent.IP)
+						continue
+					}
 
-				switch rule.Rule {
+					// determinar tipo de regla
+					ruleName := strings.ToLower(strings.TrimSpace(rule.Rule))
+					var isRisk bool
 
-				case "between", "outside":
-					// Se requieren 2 valores (min y max)
-					isRisk = rules.IsRisk(
-						val,
-						rule.Rule,
-						rule.ValueMin,
-						rule.ValueMax,
-					)
+					// evaluar según tipo de regla
+					switch ruleName {
+					case "between", "outside": // reglas de rango
+						isRisk = rules.IsRisk(
+							val,
+							ruleName,
+							rule.ValueMin,
+							rule.ValueMax,
+						)
+					default: // reglas de valor simple
+						isRisk = rules.IsRisk(
+							val,
+							ruleName,
+							rule.Value,
+						)
+					}
 
-				default:
-					// Reglas simples: >, <, >=, <=, ==, !=
-					isRisk = rules.IsRisk(
-						val,
-						rule.Rule,
-						rule.Value,
-					)
-				}
-
-				// Si hay riesgo, enviar alerta al canal
-				if isRisk {
-					reportChan <- report.ReportItem{
-						IP:    agent.IP,
-						OID:   rule.OID,
-						Value: fmt.Sprintf("%v", val),
-						Alert: "CRÍTICO (GET)",
+					// si hay riesgo, enviar reporte
+					if isRisk {
+						reportChan <- report.ReportItem{
+							IP:    agent.IP,
+							OID:   rule.OID,
+							Value: fmt.Sprintf("%v", val),
+							Alert: "CRÍTICO (GET)",
+						}
 					}
 				}
+
+				wg.Done()
 			}
+		}(i + 1)
+	}
+
+	// Bucle de scheduling
+	for {
+		fmt.Println("🔎 Ejecutando SNMP GET polling (worker pool)...")
+
+		// enviar trabajos a los workers
+		for _, agent := range cfg.Agents {
+			wg.Add(1)
+			jobs <- agent
 		}
 
-		// Esperar el intervalo antes del siguiente polling
+		// Esperar a que termine la ronda
+		wg.Wait()
+
 		time.Sleep(time.Duration(interval) * time.Second)
 	}
 }

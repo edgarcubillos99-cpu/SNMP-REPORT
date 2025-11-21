@@ -18,6 +18,7 @@ type OIDRule struct {
 // Definición de un agente SNMP
 type Agent struct {
 	IP          string    `json:"ip"`
+	Port        uint16    `json:"port,omitempty"`
 	SNMPVersion string    `json:"snmp_version"` // v2 o v3
 	Community   string    `json:"community,omitempty"`
 	OIDs        []OIDRule `json:"oids"`
