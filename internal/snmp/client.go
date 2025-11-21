@@ -4,6 +4,7 @@ package snmp
 import (
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 	"time"
 
@@ -100,15 +101,45 @@ func Query(agent config.Agent) (map[string]float64, error) {
 		}
 
 		// convertir el valor del OID a float64
-		bi := gosnmp.ToBigInt(pdu.Variables[0].Value)
-		if bi == nil {
-			fmt.Println("Error conversión (ToBigInt) en", agent.IP, o.OID)
+		var v float64
+
+		// manejar valores numéricos según tipo SNMP
+		switch value := pdu.Variables[0].Value.(type) {
+
+		// tipos enteros
+		case int, uint, int32, uint32, int64, uint64:
+			bi := gosnmp.ToBigInt(value)
+			v, _ = bi.Float64()
+
+		// tipos de decimales
+		case string:
+			// intentar convertir STRING → número
+			parsed, err := strconv.ParseFloat(value, 64)
+			if err != nil {
+				fmt.Println("STRING no convertible a número en", agent.IP, o.OID, value)
+				continue
+			}
+			v = parsed
+
+		// tipos de bytes
+		case []byte:
+			// strings como []byte → convertir
+			s := string(value)
+			parsed, err := strconv.ParseFloat(s, 64)
+			if err != nil {
+				fmt.Println("BYTESTRING no convertible a número en", agent.IP, o.OID, s)
+				continue
+			}
+			v = parsed
+
+		// otros tipos no soportados
+		default:
+			fmt.Println("Tipo SNMP no soportado en", agent.IP, o.OID, pdu.Variables[0].Type)
 			continue
 		}
 
-		// almacenar el valor en el mapa de resultados
-		v, _ := bi.Float64()
 		results[o.OID] = v
+
 	}
 
 	return results, nil
