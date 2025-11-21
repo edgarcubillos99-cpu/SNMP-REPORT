@@ -1,4 +1,4 @@
-// aqui se definen las estructuras y funciones para cargar la configuración desde un archivo JSON
+// aqui se definen las estructuras y funciones para cargar la configuración desde un archivo JSON. OIDRULE -> AGENT -> CONFIG
 package config
 
 import (
