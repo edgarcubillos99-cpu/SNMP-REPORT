@@ -1,4 +1,3 @@
-// aqui se encuentra el punto de entrada principal de la aplicación SNMP Alert
 package main
 
 import (
@@ -10,6 +9,7 @@ import (
 	"snmp-alert/internal/email"
 	"snmp-alert/internal/report"
 	"snmp-alert/internal/snmp"
+	"strconv"
 	"sync"
 	"syscall"
 	"time"
@@ -36,6 +36,22 @@ func main() {
 		reportList []report.ReportItem
 		mu         sync.Mutex
 	)
+
+	// Mapa para evitar alertas repetidas por IP + OID
+	lastAlert := make(map[string]time.Time)
+	var lastAlertMu sync.Mutex
+
+	// ================================
+	// 🔧 Leer ALERT_REPEAT_MINUTES del .env
+	// ================================
+	repeatMinutesStr := os.Getenv("ALERT_REPEAT_MINUTES")
+	repeatMinutes, err := strconv.Atoi(repeatMinutesStr)
+	if err != nil || repeatMinutes <= 0 {
+		repeatMinutes = 30 // valor por defecto
+	}
+
+	minInterval := time.Duration(repeatMinutes) * time.Minute
+	fmt.Println("⏱ Tiempo mínimo entre alertas repetidas:", minInterval)
 
 	// Iniciar servidor de traps
 	go snmp.StartTrapServer(reportChan)
@@ -90,10 +106,30 @@ func main() {
 		select {
 
 		case r := <-reportChan:
+			// Crear clave única (IP + OID)
+			key := r.IP + "|" + r.OID
+
+			lastAlertMu.Lock()
+			lastTime, exists := lastAlert[key]
+			now := time.Now()
+
+			// Si existe y no han pasado X minutos → ignorar alerta
+			if exists && now.Sub(lastTime) < minInterval {
+				lastAlertMu.Unlock()
+				fmt.Printf("⏳ Alerta repetida omitida (%s - %s)\n", r.IP, r.OID)
+				continue
+			}
+
+			// Registrar nuevo timestamp para esta alerta
+			lastAlert[key] = now
+			lastAlertMu.Unlock()
+
+			// Agregar alerta al buffer para el reporte
 			mu.Lock()
 			reportList = append(reportList, r)
 			mu.Unlock()
-			fmt.Println("⚠ Alerta nueva:", r)
+
+			fmt.Println("⚠ Alerta nueva registrada:", r)
 
 		case <-exitChan:
 			fmt.Println("⛔ Deteniendo servicio... SIN enviar reporte final.")
